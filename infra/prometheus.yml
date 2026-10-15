@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: pilot
+    static_configs:
+      - targets: ['pilot:8950']
+  - job_name: demo-services
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ['orders:8000','payments:8000','inventory:8000']

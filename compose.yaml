@@ -1,0 +1,76 @@
+x-demo: &demo
+  image: incident-pilot:local
+  build: .
+  environment: &env
+    CONTROL_TOKEN: ${CONTROL_TOKEN:-local-demo-only}
+    ORDERS_URL: http://orders:8000
+    PAYMENTS_URL: http://payments:8000
+    INVENTORY_URL: http://inventory:8000
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pilot
+      POSTGRES_USER: pilot
+      POSTGRES_PASSWORD: local-demo-password
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U pilot]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+  orders:
+    <<: *demo
+    environment:
+      <<: *env
+      SERVICE_NAME: orders
+    command: [uvicorn, services.app:app, --host, 0.0.0.0, --port, '8000']
+  payments:
+    <<: *demo
+    environment:
+      <<: *env
+      SERVICE_NAME: payments
+    command: [uvicorn, services.app:app, --host, 0.0.0.0, --port, '8000']
+  inventory:
+    <<: *demo
+    environment:
+      <<: *env
+      SERVICE_NAME: inventory
+    command: [uvicorn, services.app:app, --host, 0.0.0.0, --port, '8000']
+  pilot:
+    <<: *demo
+    environment:
+      <<: *env
+      DATABASE_URL: postgresql+psycopg://pilot:local-demo-password@db:5432/pilot
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+    ports:
+      - '127.0.0.1:8950:8950'
+    depends_on:
+      db:
+        condition: service_healthy
+      orders:
+        condition: service_started
+      payments:
+        condition: service_started
+      inventory:
+        condition: service_started
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    profiles: [observability]
+    command: ['--config.file=/etc/prometheus/prometheus.yml']
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - '127.0.0.1:9090:9090'
+  jaeger:
+    image: jaegertracing/all-in-one:1.65.0
+    profiles: [observability]
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    ports:
+      - '127.0.0.1:16686:16686'
+volumes:
+  database:
